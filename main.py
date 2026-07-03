@@ -48,7 +48,7 @@ class OptimizeResponse(BaseModel):
 
 
 #Маршруты
-app = FastAPI(title="Модуль оптимизации водородного пинча")
+app = FastAPI(title="Оптимизация методом водородного пинча")
 
 @app.get("/")
 def read_root():
