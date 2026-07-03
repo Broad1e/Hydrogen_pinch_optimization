@@ -1,6 +1,6 @@
 from enum import Enum
 from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 #Типы данных (контракт)
 class StreamType(str, Enum): #тип (источник или потребитель), строка с ограниченными вариантами
@@ -12,7 +12,7 @@ class GraphPoint(BaseModel): #построение исходного графи
     y: float = Field(..., description="Чистота водорода (Purity)")
 
 class StreamData(BaseModel): #
-    id: int = Field(..., description="Идентификатор потока")
+    id: PositiveInt = Field(..., description="Идентификатор потока")
     name: str = Field(..., description="Название потока")
     type: StreamType = Field(..., description="Тип потока: Source или Sink")
     flow_rate: float = Field(..., gt=0, description="Расход водорода")
@@ -25,25 +25,28 @@ class StreamData(BaseModel): #
 class BaselineResponse(BaseModel):
     status: str = Field(default="success")
     current_fresh_h2: float = Field(..., description="Текущее потребление свежего водорода")
+    target_fresh_h2: float | None = Field(default=None, description="Оптимизированное потребление (Стало) — пока пустое")
+    saved_h2: float | None = Field(default=None, description="Сэкономленный объем — пока пустой") #пустые поля для отрисковки
+    initial_curve: list[GraphPoint] = Field(..., description="Точки для исходной кривой")
     sources_curve: list[GraphPoint] = Field(..., description="Точки для кривой источников")
     sinks_curve: list[GraphPoint] = Field(..., description="Точки для кривой стоков")
 
 class TopologyLink(BaseModel):
-    source_id: int
-    sink_id: int
     source_name: str
     sink_name: str
-    flow_amount: float = Field(..., description="Объем переданного водорода")
+    flow_amount: float = Field(..., description="Объем переданного водорода")#
 
 #Ответ после оптимизации
 class OptimizeResponse(BaseModel):
     status: str = Field(..., description="optimized или impossible")
-    color_code: str = Field(..., description="green или red")
+    is_optimized: bool = Field(..., description="True, если экономия составила больше статистической погрешности") #замена цвета на булеву переменную
     message: str = Field(..., description="Текстовое сообщение")
     target_fresh_h2: float = Field(..., description="Новое потребление свежего водорода")
     saved_h2: float = Field(..., description="Сэкономленный объем")
     pinch_point_purity: float = Field(..., description="Чистота в Пинч-точке")
-    optimized_sources_curve: list[GraphPoint] = Field(..., description="Новая кривая")
+    current_fresh_h2: float = Field(..., description="Текущее потребление свежего водорода") #добавлено для таблицы
+    initial_curve: list[GraphPoint] = Field(..., description="Исходная кривая") #передача обоих графиков, независимость от .csv
+    optimized_curve: list[GraphPoint] = Field(..., description="Новая кривая")
     new_topology: list[TopologyLink] = Field(..., description="План переключений")
 
 
