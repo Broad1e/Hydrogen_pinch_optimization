@@ -1,5 +1,7 @@
+import csv
+import os
 from enum import Enum
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, PositiveInt, field_validator
 
 #Типы данных (контракт)
@@ -11,7 +13,7 @@ class GraphPoint(BaseModel): #построение исходного графи
     x: float = Field(..., description="Расход (Flow)")
     y: float = Field(..., description="Чистота водорода (Purity)")
 
-class StreamData(BaseModel): #
+class StreamData(BaseModel): #переменные 
     id: PositiveInt = Field(..., description="Идентификатор потока")
     name: str = Field(..., description="Название потока")
     type: StreamType = Field(..., description="Тип потока: Source или Sink")
@@ -19,7 +21,7 @@ class StreamData(BaseModel): #
     purity: float = Field(..., ge=0, le=100, description="Чистота водорода в %")
     allowed_connections: list[PositiveInt] = Field(default=[], description="ID разрешенных стоков")
     
-#Можно добавить field_validator, чтобы получать ошибку в случае одинаковых id
+#field_validator, чтобы получать ошибку в случае одинаковых id
 class StreamCollection(BaseModel):
     streams: list[StreamData] = Field(..., description="Список всех потоков")
     @field_validator('streams')
@@ -34,7 +36,7 @@ class StreamCollection(BaseModel):
 class BaselineResponse(BaseModel):
     status: str = Field(default="success")
     current_fresh_h2: float = Field(..., description="Текущее потребление свежего водорода")
-    target_fresh_h2: float | None = Field(default=None, description="Оптимизированное потребление (Стало) — пока пустое")
+    target_fresh_h2: float | None = Field(default=None, description="Оптимизированное потребление — пока пустое")
     saved_h2: float | None = Field(default=None, description="Сэкономленный объем — пока пустой") #пустые поля для отрисковки
     initial_curve: list[GraphPoint] = Field(..., description="Точки для исходной кривой")
     @field_validator('initial_curve')
@@ -65,6 +67,38 @@ class OptimizeResponse(BaseModel):
     def sort_curves(cls, curve):
         return sorted(curve, key=lambda point: point.y, reverse=True)
 
+#функция чтения CSV-файла
+def load_streams_from_csv(file_path: str = "data.csv") -> list[StreamData]:
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"Файл {file_path} не найден на сервере")
+
+    raw_streams = []
+    with open(file_path, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Превращаем строку в список 
+            conns_str = row.get("allowed_connections", "").strip()
+            if conns_str:
+                conns = [int(c.strip()) for c in conns_str.split(",")]
+            else:
+                conns = []
+
+            raw_streams.append({
+                "id": int(row["id"]),
+                "name": row["name"],
+                "type": row["type"],
+                "flow_rate": float(row["flow_rate"]),
+                "purity": float(row["purity"]),
+                "allowed_connections": conns
+            })
+    
+    #проверка уникальности  id
+    try:
+        collection = StreamCollection(streams=raw_streams)
+        return collection.streams
+    except ValueError as e:
+        #если валидатор нашел ошибку - 422 ошибка
+        raise HTTPException(status_code=422, detail=str(e))
 
 #Маршруты
 app = FastAPI(title="Оптимизация методом водородного пинча")
@@ -75,8 +109,36 @@ def read_root():
 
 @app.get("/api/v1/pinch/baseline", response_model=BaselineResponse)
 def get_baseline_data():
-    #вписать чтение csv и построение исходного графика
-    pass
+#считать данные из .csv файла
+    streams = load_streams_from_csv("data.csv")
+    
+    #расчет текущего потребления (сумма расходов всех потоков типа Source)
+    current_fresh = sum(s.flow_rate for s in streams if s.type == StreamType.SOURCE)
+    
+    #построение графика
+    #отбор источников и сортировка по чистоте (от высшей к низшей)
+    sources = [s for s in streams if s.type == StreamType.SOURCE]
+    sources_sorted = sorted(sources, key=lambda s: s.purity, reverse=True)
+    
+    actual_curve = []
+    current_x = 0.0
+    
+    for stream in sources_sorted:
+        #точка начала ступеньки (текущий накопленный расход, чистота этой трубы)
+        actual_curve.append(GraphPoint(x=current_x, y=stream.purity))
+        
+        #суммирование расхода этой трубы к общему (вправо по оси X)
+        current_x += stream.flow_rate
+        
+        #точка конца горизонтальной ступеньки
+        actual_curve.append(GraphPoint(x=current_x, y=stream.purity))
+    
+    #формирование ответа
+    return BaselineResponse(
+        status="success",
+        current_fresh_h2=current_fresh,
+        initial_curve=actual_curve
+    )
 
 @app.get("/api/v1/pinch/optimize", response_model=OptimizeResponse)
 def run_optimization():
