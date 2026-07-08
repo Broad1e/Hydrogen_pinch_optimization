@@ -256,7 +256,10 @@ def plot_method_result(method_key: str, data: dict):
     )
 
     plt.tight_layout()
-    plt.show()
+    filename = f"{method_key}_plot.png"
+    plt.savefig(filename, dpi=300)
+    plt.close()
+    print(f"  -> График сохранён в файл: {filename}")
 
 
 # Main
