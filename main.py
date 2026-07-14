@@ -8,13 +8,14 @@ from models import (
     StreamType, OptMethod,
     BaselineResponse, OptimizeResponse,
 )
-from data_loader import load_streams_from_csv
+from data_loader import load_streams
 from solvers import (
     calculate_baseline_fresh_h2,
     build_cascade_curve,
     run_lp_optimization,
     run_cascade_optimization,
     run_mcmf_optimization,
+    run_nlp_optimization,
 )
 
 
@@ -23,11 +24,11 @@ app = FastAPI(
     title="Hydrogen Pinch Optimizer",
     description=(
         "Оптимизация потребления водорода на НПЗ "
-        "методом водородного пинча. Поддерживает три метода: "
+        "методом водородного пинча. Поддерживает четыре метода: "
         "LP (линейное программирование), Cascade (каскадный анализ), "
-        "MCMF (Min Cost Max Flow)."
+        "MCMF (Min Cost Max Flow), NLP (нелинейное программирование)."
     ),
-    version="1.0.0",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -44,15 +45,15 @@ app.add_middleware(
 def read_root():
     return {
         "message": "Hydrogen Pinch Optimizer",
-        "version": "1.0.0",
-        "methods": ["lp", "cascade", "mcmf"],
+        "version": "2.0.0",
+        "methods": ["lp", "cascade", "mcmf", "nlp"],
     }
 
 
 @app.get("/api/v1/pinch/baseline", response_model=BaselineResponse)
 def get_baseline_data():
     # Расчёт baseline: жадное распределение без глобальной оптимизации
-    streams = load_streams_from_csv("data.csv")
+    streams = load_streams()
     sources = [s for s in streams if s.type == StreamType.SOURCE]
     sinks = [s for s in streams if s.type == StreamType.SINK]
 
@@ -80,12 +81,13 @@ def run_optimization(
             "Метод оптимизации: "
             "lp (линейное программирование, смешение разрешено), "
             "cascade (каскадный анализ, теоретический минимум), "
-            "mcmf (Min Cost Max Flow, прямые подключения)"
+            "mcmf (Min Cost Max Flow, прямые подключения), "
+            "nlp (нелинейное программирование, смешение + штраф за перерасход чистоты)"
         ),
     ),
 ):
 
-    streams = load_streams_from_csv("data.csv")
+    streams = load_streams()
     sources = [s for s in streams if s.type == StreamType.SOURCE]
     sinks = [s for s in streams if s.type == StreamType.SINK]
 
@@ -102,11 +104,13 @@ def run_optimization(
         OptMethod.LP: "Линейное программирование",
         OptMethod.CASCADE: "Каскадный анализ",
         OptMethod.MCMF: "Min Cost Max Flow (MCMF)",
+        OptMethod.NLP: "Нелинейное программирование (NLP)",
     }
     method_notes = {
         OptMethod.LP: "Учитывает топологию, разрешает смешение потоков",
         OptMethod.CASCADE: "Теоретический минимум (топология игнорируется)",
         OptMethod.MCMF: "Учитывает топологию, только прямые подключения (без смешения)",
+        OptMethod.NLP: "Учитывает топологию, смешение + штраф за перерасход чистоты",
     }
 
     pinch_point = None
@@ -120,6 +124,8 @@ def run_optimization(
         result = run_mcmf_optimization(sources, sinks)
         if not result["success"] and "error" in result:
             raise HTTPException(status_code=500, detail=result["error"])
+    elif method == OptMethod.NLP:
+        result = run_nlp_optimization(sources, sinks)
     else:
         raise HTTPException(status_code=400, detail=f"Неизвестный метод: {method}")
 

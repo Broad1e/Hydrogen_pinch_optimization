@@ -15,6 +15,7 @@ class OptMethod(str, Enum):
     LP = "lp"
     CASCADE = "cascade"
     MCMF = "mcmf"
+    NLP = "nlp"
 
 
 class GraphPoint(BaseModel):

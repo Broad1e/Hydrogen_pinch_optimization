@@ -1,11 +1,10 @@
-"""Тестирование микросервиса Hydrogen Pinch Optimizer v3.0.
+"""Тестирование микросервиса Hydrogen Pinch Optimizer v4.0.
 
 Запускает все эндпоинты через TestClient (без запуска сервера),
-проверяет корректность ответов, сравнивает три метода оптимизации
+проверяет корректность ответов, сравнивает четыре метода оптимизации
 и отрисовывает каскадные кривые (каждый метод на отдельном графике).
 
 Использование:
-    python generate.py   # (сначала сгенерировать data.csv)
     python test.py
 """
 
@@ -123,20 +122,21 @@ def print_comparison(results: dict[str, dict]):
         baseline = data["baseline_fresh_h2"]
         break
 
-    print(f"\n{'=' * 66}")
+    print(f"\n{'=' * 72}")
     print(f"  СРАВНЕНИЕ МЕТОДОВ ОПТИМИЗАЦИИ")
-    print(f"{'=' * 66}")
+    print(f"{'=' * 72}")
     print(f"  {'Метод':<22} {'Свежий H2':>10} {'Экономия':>10} {'%':>7}  Примечание")
-    print(f"  {'-' * 62}")
+    print(f"  {'-' * 68}")
     print(f"  {'Baseline (жадный)':<22} {baseline:>10.2f} {'---':>10} {'---':>7}  Точка отсчета")
 
     method_info = {
         "cascade": ("Каскадный", "Теор. минимум"),
         "lp":      ("LP", "Смешение"),
+        "nlp":     ("NLP", "Нелин. смешение"),
         "mcmf":    ("MCMF", "Без смешения"),
     }
 
-    sorted_methods = ["cascade", "lp", "mcmf"]
+    sorted_methods = ["cascade", "lp", "nlp", "mcmf"]
 
     for m in sorted_methods:
         if m not in results:
@@ -151,10 +151,11 @@ def print_comparison(results: dict[str, dict]):
             pinch = f", пинч={data['pinch_point']}%"
         print(f"  {label:<22} {fresh:>10.2f} {saved:>10.2f} {pct:>6.1f}%  {note}{pinch}")
 
-    print(f"{'=' * 66}")
+    print(f"{'=' * 72}")
 
-    # Проверка: cascade <= lp <= mcmf <= baseline
-    if all(m in results for m in sorted_methods):
+    # Проверка порядка: cascade <= lp <= mcmf <= baseline
+    check_methods = ["cascade", "lp", "mcmf"]
+    if all(m in results for m in check_methods):
         c = results["cascade"]["optimized_fresh_h2"]
         l = results["lp"]["optimized_fresh_h2"]
         m = results["mcmf"]["optimized_fresh_h2"]
@@ -176,6 +177,7 @@ def plot_method_result(method_key: str, data: dict):
     method_styles = {
         "cascade": ("b", "^", "Каскадный анализ (Hydrogen Pinch)"),
         "lp":      ("g", "s", "Линейное программирование (LP)"),
+        "nlp":     ("c", "P", "Нелинейное программирование (NLP)"),
         "mcmf":    ("m", "D", "Min Cost Max Flow (MCMF)"),
     }
 
@@ -266,10 +268,11 @@ def plot_method_result(method_key: str, data: dict):
 
 
 if __name__ == "__main__":
-    print("=" * 66)
-    print("  ТЕСТИРОВАНИЕ: Hydrogen Pinch Optimizer v3.0")
-    print("  Методы: LP, Каскадный, Min Cost Max Flow")
-    print("=" * 66)
+    print("=" * 72)
+    print("  ТЕСТИРОВАНИЕ: Hydrogen Pinch Optimizer v4.0")
+    print("  Методы: LP, NLP, Каскадный, Min Cost Max Flow")
+    print("  Источник данных: PostgreSQL")
+    print("=" * 72)
 
     # 1. Проверка корня
     test_root()
@@ -279,8 +282,8 @@ if __name__ == "__main__":
     test_baseline()
     print()
 
-    # 3. Оптимизация всеми тремя методами
-    methods = ["cascade", "lp", "mcmf"]
+    # 3. Оптимизация всеми четырьмя методами
+    methods = ["cascade", "lp", "nlp", "mcmf"]
     results: dict[str, dict] = {}
 
     for m in methods:

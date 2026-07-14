@@ -3,7 +3,7 @@
 # + Baseline (жадный алгоритм) и построение каскадных кривых
 
 import numpy as np
-from scipy.optimize import linprog
+from scipy.optimize import linprog, minimize
 
 try:
     import networkx as nx
@@ -442,3 +442,124 @@ def run_mcmf_optimization(
                 ))
 
     return {"success": True, "fresh_h2": total_fresh, "topology": topology}
+
+
+# Метод 4 - Нелинейное программирование (NLP)
+# Оптимизация с нелинейной целевой функцией через scipy.optimize.minimize (SLSQP).
+# В отличие от LP, штрафует за избыточный перерасход чистоты (квадратичный штраф),
+# что даёт более равномерное распределение потоков.
+# Поддерживает смешение и учитывает топологию (allowed_connections).
+def run_nlp_optimization(
+    sources: list[StreamData],
+    sinks: list[StreamData],
+) -> dict:
+    N = len(sources)
+    M = len(sinks)
+    num_vars = N * M + M  # x[i,j] + fresh[j]
+    PENALTY = 1e-3  # Штраф за перерасход чистоты
+
+    # Маска запрещённых связей: True = связь запрещена
+    blocked = np.zeros(N * M, dtype=bool)
+    for i in range(N):
+        for j in range(M):
+            allowed = sources[i].allowed_connections
+            if allowed and sinks[j].id not in allowed:
+                blocked[i * M + j] = True
+
+    # Целевая функция: sum(fresh[j]) + penalty * sum((purity_excess[j])^2)
+    # purity_excess[j] = (чистота_смеси_j - требуемая_j), если > 0
+    def objective(x):
+        total_fresh = sum(x[N * M + j] for j in range(M))
+
+        purity_penalty = 0.0
+        for j in range(M):
+            total_flow_to_j = sum(x[i * M + j] for i in range(N)) + x[N * M + j]
+            if total_flow_to_j > 1e-9:
+                purity_mix = (
+                    sum(x[i * M + j] * sources[i].purity for i in range(N))
+                    + x[N * M + j] * 100.0
+                ) / total_flow_to_j
+                excess = max(0.0, purity_mix - sinks[j].purity)
+                purity_penalty += excess ** 2
+
+        return total_fresh + PENALTY * purity_penalty
+
+    # Ограничения
+    constraints = []
+
+    # Равенство: каждый сток получает ровно свой flow_rate
+    for j in range(M):
+        def eq_sink(x, j=j):
+            return sum(x[i * M + j] for i in range(N)) + x[N * M + j] - sinks[j].flow_rate
+        constraints.append({"type": "eq", "fun": eq_sink})
+
+    # Неравенство: каждый источник не отдаёт больше своего flow_rate
+    for i in range(N):
+        def ineq_src(x, i=i):
+            return sources[i].flow_rate - sum(x[i * M + j] for j in range(M))
+        constraints.append({"type": "ineq", "fun": ineq_src})
+
+    # Неравенство: чистота смеси в каждом стоке >= требуемой
+    for j in range(M):
+        def ineq_purity(x, j=j):
+            return (
+                sum(x[i * M + j] * sources[i].purity for i in range(N))
+                + x[N * M + j] * 100.0
+                - sinks[j].flow_rate * sinks[j].purity
+            )
+        constraints.append({"type": "ineq", "fun": ineq_purity})
+
+    # Границы переменных
+    bounds = []
+    for i in range(N):
+        for j in range(M):
+            if blocked[i * M + j]:
+                bounds.append((0.0, 0.0))
+            else:
+                bounds.append((0.0, sources[i].flow_rate))
+    for j in range(M):
+        bounds.append((0.0, sinks[j].flow_rate))
+
+    # Начальное приближение: всё покрывается свежим H2
+    x0 = np.zeros(num_vars)
+    for j in range(M):
+        x0[N * M + j] = sinks[j].flow_rate
+
+    # Запуск SLSQP
+    result = minimize(
+        objective, x0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+        options={"maxiter": 1000, "ftol": 1e-10},
+    )
+
+    if not result.success:
+        return {"success": False, "fresh_h2": 0.0, "topology": []}
+
+    # Извлечение результатов
+    topology: list[TopologyLink] = []
+    total_fresh = 0.0
+
+    for i in range(N):
+        for j in range(M):
+            flow = result.x[i * M + j]
+            if flow > 1e-4:
+                topology.append(TopologyLink(
+                    source_name=sources[i].name,
+                    sink_name=sinks[j].name,
+                    flow_amount=round(flow, 2),
+                ))
+
+    for j in range(M):
+        fresh = result.x[N * M + j]
+        total_fresh += fresh
+        if fresh > 1e-4:
+            topology.append(TopologyLink(
+                source_name="Свежий H2 (100%)",
+                sink_name=sinks[j].name,
+                flow_amount=round(fresh, 2),
+            ))
+
+    return {"success": True, "fresh_h2": total_fresh, "topology": topology}
+
