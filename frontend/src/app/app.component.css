@@ -186,8 +186,21 @@ html, body {
 /* ============================================
    ТАБЛИЦА ТОПОЛОГИИ (план переключений)
    ============================================ */
+.topologies-container {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
 .topology-wrapper {
+  flex: 1;
+  min-width: 320px;
   max-width: 800px;
+  margin: 0;
 }
 
 .topology-title {
@@ -277,11 +290,63 @@ html, body {
   color: #ccc;
 }
 
+.method-btn.selected {
+  border-color: #FF9800;
+  color: #FF9800;
+  background: rgba(255, 152, 0, 0.08);
+  box-shadow: 0 0 20px rgba(255, 152, 0, 0.1);
+}
+
 .method-btn.active {
   border-color: #00D4FF;
   color: #00D4FF;
   background: rgba(0, 212, 255, 0.08);
   box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+}
+
+.dataset-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dataset-select {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #eee;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.dataset-select:focus {
+  border-color: #00D4FF;
+}
+
+.dataset-select option {
+  background: #14141e;
+  color: #eee;
+}
+
+.toggle-btn {
+  margin-top: 15px;
+  padding: 10px 20px;
+  background: transparent;
+  color: #aaa;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
 }
 
 .optimize-btn {

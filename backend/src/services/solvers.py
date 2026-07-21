@@ -5,28 +5,41 @@
 import numpy as np
 from scipy.optimize import linprog, minimize
 
- 
+try:
+    import networkx as nx
+except ImportError:
+    nx = None
 
-from models import StreamType, StreamData, GraphPoint, TopologyLink
+from src.schemas.pinch import StreamType, StreamData, GraphPoint, TopologyLink
 
 
-# Жадный алгоритм расчёта исходного потребления свежего водорода.
-def calculate_baseline_fresh_h2(streams: list[StreamData]) -> float:
-    # Базовое распределение: берём самые чистые источники для самых чистых стоков.
-    # Остаток покрывается свежим H2.
-    # Учитывает разрешенные связи (allowed_connections).
-    # Не поддерживает смешение газов (если источник грязнее стока, он не используется).
+def calculate_baseline_fresh_h2(streams: list[StreamData]) -> tuple[float, list[TopologyLink]]:
+    """Жадный алгоритм расчёта базового потребления свежего водорода.
+
+    Выполняет базовое (жадное) распределение: берёт самые чистые источники для
+    самых чистых стоков. Остаток потребности покрывается свежим водородом (100% чистота).
+    Учитывает разрешенные связи (`allowed_connections`).
+    Не поддерживает смешение газов: если источник грязнее стока, он не используется.
+
+    Args:
+        streams (list[StreamData]): Список всех водородных потоков (источники и стоки).
+
+    Returns:
+        tuple[float, list[TopologyLink]]: Кортеж, где первый элемент — объем 
+            свежего H2 (Нм3/ч), второй — базовая топология потоков (было/стало).
+    """
     sources = [s for s in streams if s.type == StreamType.SOURCE]
     sinks = [s for s in streams if s.type == StreamType.SINK]
 
     if not sinks:
-        return 0.0
+        return 0.0, []
 
     sinks_sorted = sorted(sinks, key=lambda s: s.purity, reverse=True)
     sources_sorted = sorted(sources, key=lambda s: s.purity, reverse=True)
     source_remains = {s.id: s.flow_rate for s in sources}
 
     fresh_h2 = 0.0
+    topology: list[TopologyLink] = []
 
     for snk in sinks_sorted:
         unmet = snk.flow_rate
@@ -43,20 +56,44 @@ def calculate_baseline_fresh_h2(streams: list[StreamData]) -> float:
             transfer = min(unmet, source_remains[src.id])
             unmet -= transfer
             source_remains[src.id] -= transfer
+            
+            if transfer > 1e-4:
+                topology.append(TopologyLink(
+                    source_name=src.name,
+                    sink_name=snk.name,
+                    flow_amount=round(transfer, 2)
+                ))
 
         if unmet > 1e-9:
             fresh_h2 += unmet
+            topology.append(TopologyLink(
+                source_name="Свежий H2 (100%)",
+                sink_name=snk.name,
+                flow_amount=round(unmet, 2)
+            ))
 
-    return fresh_h2
+    return fresh_h2, topology
 
 
-# Построение каскадной кривой избытка водорода
 def build_cascade_curve(
     fresh_h2: float,
     sources: list[dict],
     sinks: list[dict],
 ) -> list[GraphPoint]:
-    # Считает кумулятивный баланс водорода по уровням чистоты сверху вниз.
+    """Построение каскадной кривой избытка водорода.
+
+    Вычисляет кумулятивный баланс водорода по уровням чистоты (сверху вниз,
+    от самой высокой концентрации к самой низкой). Кривая используется
+    на фронтенде для визуализации избытка.
+
+    Args:
+        fresh_h2 (float): Объем свежего 100% водорода, подаваемого в систему.
+        sources (list[dict]): Список источников с ключами 'flow_rate' и 'purity'.
+        sinks (list[dict]): Список стоков с ключами 'flow_rate' и 'purity'.
+
+    Returns:
+        list[GraphPoint]: Список точек (x, y), где x - объем, y - чистота.
+    """
     all_purities = sorted(
         set(
             [100.0]
@@ -94,13 +131,23 @@ def build_cascade_curve(
     return curve
 
 
-# Метод 1 - Линейное программирование (LP)
-# Находит оптимальное распределение потоков с учетом смешения и ограничений топологии.
-# Минимизирует расход свежего H2.
 def run_lp_optimization(
     sources: list[StreamData],
     sinks: list[StreamData],
 ) -> dict:
+    """Метод оптимизации на базе Линейного Программирования (LP).
+
+    Находит оптимальное распределение потоков с учетом смешения и ограничений топологии.
+    Оптимизатор минимизирует общий расход свежего водорода (целевая функция).
+    Использует библиотеку SciPy (`scipy.optimize.linprog`).
+
+    Args:
+        sources (list[StreamData]): Список источников.
+        sinks (list[StreamData]): Список стоков.
+
+    Returns:
+        dict: Словарь с результатами (успех, расход H2, расписание связей, ошибки).
+    """
     N = len(sources)
     M = len(sinks)
     num_vars = N * M + M
@@ -188,13 +235,23 @@ def run_lp_optimization(
     return {"success": True, "fresh_h2": total_fresh, "topology": topology}
 
 
-# Метод 2 - Каскадный анализ
-# Теоретический минимум потребления свежего водорода, игнорирует ограничения по трубам.
-# Показывает абсолютный предел экономии и находит Пинч-точку.
 def run_cascade_optimization(
     sources: list[StreamData],
     sinks: list[StreamData],
 ) -> dict:
+    """Метод оптимизации на основе Каскадного Анализа (Пинч-анализ).
+
+    Рассчитывает теоретический минимум потребления свежего водорода, игнорируя
+    ограничения топологии (считает, что все трубы можно провести куда угодно).
+    Определяет 'Пинч-точку' - уровень чистоты, при котором избыток водорода равен нулю.
+
+    Args:
+        sources (list[StreamData]): Список источников.
+        sinks (list[StreamData]): Список стоков.
+
+    Returns:
+        dict: Словарь с результатами (успех, расход H2, расписание связей, пинч-точка).
+    """
     # 1. Собрать уровни чистоты
     all_purities = sorted(
         set(
@@ -253,7 +310,20 @@ def _build_cascade_topology(
     sinks: list[StreamData],
     min_fresh: float,
 ) -> list[TopologyLink]:
-    # Построение идеальной топологии для каскада.
+    """Вспомогательная функция для построения идеальной каскадной топологии.
+
+    Формирует "жадное" распределение от самых чистых источников к самым чистым стокам,
+    но с использованием уже вычисленного теоретического минимума свежего водорода (min_fresh).
+    Не учитывает ограничения по трубам (allowed_connections).
+
+    Args:
+        sources (list[StreamData]): Список источников.
+        sinks (list[StreamData]): Список стоков.
+        min_fresh (float): Минимальный необходимый объем свежего H2 (из каскада).
+
+    Returns:
+        list[TopologyLink]: Идеализированная схема связей (для сравнения).
+    """
     sinks_sorted = sorted(sinks, key=lambda s: s.purity, reverse=True)
     sources_sorted = sorted(sources, key=lambda s: s.purity, reverse=True)
     source_remains = {s.id: s.flow_rate for s in sources}
@@ -306,13 +376,23 @@ def _build_cascade_topology(
     return topology
 
 
-# Метод 3 - Минимальная стоимость максимального потока (MCMF)
-# Оптимизация потоков через графы (без смешения).
-# Ищет оптимальный маршрут по существующим трубам (allowed_connections).
 def run_mcmf_optimization(
     sources: list[StreamData],
     sinks: list[StreamData],
 ) -> dict:
+    """Метод оптимизации на основе графов (Min Cost Max Flow).
+
+    Ищет оптимальный маршрут по существующим трубам (`allowed_connections`).
+    В отличие от LP, этот метод НЕ поддерживает смешение потоков: источник
+    должен быть чище или равен стоку по чистоте для прямой подачи.
+
+    Args:
+        sources (list[StreamData]): Список источников.
+        sinks (list[StreamData]): Список стоков.
+
+    Returns:
+        dict: Словарь с результатами (успех, расход H2, расписание связей).
+    """
     if nx is None:
         return {
             "success": False,
@@ -441,15 +521,24 @@ def run_mcmf_optimization(
     return {"success": True, "fresh_h2": total_fresh, "topology": topology}
 
 
-# Метод 4 - Нелинейное программирование (NLP)
-# Оптимизация с нелинейной целевой функцией через scipy.optimize.minimize (SLSQP).
-# В отличие от LP, штрафует за избыточный перерасход чистоты (квадратичный штраф),
-# что даёт более равномерное распределение потоков.
-# Поддерживает смешение и учитывает топологию (allowed_connections).
 def run_nlp_optimization(
     sources: list[StreamData],
     sinks: list[StreamData],
 ) -> dict:
+    """Метод нелинейной оптимизации (NLP) на базе алгоритма SLSQP.
+
+    Оптимизация с нелинейной целевой функцией. В отличие от LP, метод штрафует
+    за избыточный перерасход чистоты (квадратичный штраф), что даёт более
+    равномерное и физически реалистичное распределение потоков. Поддерживает
+    смешение потоков и учитывает топологию (`allowed_connections`).
+
+    Args:
+        sources (list[StreamData]): Список источников.
+        sinks (list[StreamData]): Список стоков.
+
+    Returns:
+        dict: Словарь с результатами (успех, расход H2, расписание связей).
+    """
     N = len(sources)
     M = len(sinks)
     num_vars = N * M + M  # x[i,j] + fresh[j]

@@ -12,6 +12,7 @@ interface BaselineResponse {
   status: string;
   baseline_fresh_h2: number;
   baseline_curve: GraphPoint[];
+  baseline_topology: any[];
 }
 
 interface OptimizeResponse {
@@ -27,6 +28,15 @@ interface OptimizeResponse {
   baseline_curve: GraphPoint[];
   optimized_curve: GraphPoint[];
   new_topology: any[];
+}
+
+interface DatasetInfo {
+  id: number;
+  description: string;
+}
+
+interface DatasetsResponse {
+  datasets: DatasetInfo[];
 }
 
 type OptimizationMethod = 'lp' | 'cascade' | 'mcmf' | 'nlp';
@@ -54,16 +64,23 @@ export class AppComponent implements AfterViewInit {
   isImprovement: boolean = true;
   errorMessage: string = '';
 
-  // Данные для таблицы топологии (план переключений)
+  // Датасеты
+  datasets: DatasetInfo[] = [];
+  selectedDatasetId: number = 1;
+
+  // Данные для таблиц топологии
+  baselineTopologyData: { source_name: string; sink_name: string; flow_amount: number }[] = [];
   topologyData: { source_name: string; sink_name: string; flow_amount: number }[] = [];
+  showTopology: boolean = false; // Видимость таблиц топологии
 
   // Массив методов для кнопок
   methods: OptimizationMethod[] = ['lp', 'cascade', 'mcmf', 'nlp'];
   selectedMethod: OptimizationMethod = 'lp';
+  appliedMethod: OptimizationMethod = 'lp';
 
-  private margin = { top: 60, right: 120, bottom: 60, left: 70 };
-  private width = 800;
-  private height = 450;
+  private margin = { top: 60, right: 160, bottom: 60, left: 70 };
+  private width = 900;
+  private height = 500;
 
   private apiUrl = '/api/v1/pinch';
 
@@ -74,8 +91,33 @@ export class AppComponent implements AfterViewInit {
 
   ngAfterViewInit() {
     setTimeout(() => {
-      this.loadBaseline();
+      this.loadDatasets();
     }, 100);
+  }
+
+  // ============================================
+  // ЗАГРУЗКА ДАТАСЕТОВ
+  // ============================================
+  loadDatasets() {
+    this.http.get<DatasetsResponse>(`${this.apiUrl}/datasets`).subscribe({
+      next: (res) => {
+        this.datasets = res.datasets;
+        if (this.datasets.length > 0) {
+          this.selectedDatasetId = this.datasets[0].id;
+          this.loadBaseline();
+        }
+      },
+      error: (err) => console.error('Ошибка загрузки датасетов:', err)
+    });
+  }
+
+  // ============================================
+  // СМЕНА ДАТАСЕТА
+  // ============================================
+  changeDataset(event: any) {
+    this.selectedDatasetId = Number(event.target.value);
+    // При смене датасета сбрасываем оптимизацию и грузим baseline
+    this.loadBaseline();
   }
 
   // ============================================
@@ -85,17 +127,19 @@ export class AppComponent implements AfterViewInit {
     this.isLoading = true;
     this.errorMessage = '';
     
-    this.http.get<BaselineResponse>(`${this.apiUrl}/baseline`)
+    this.http.get<BaselineResponse>(`${this.apiUrl}/baseline?dataset_id=${this.selectedDatasetId}`)
       .subscribe({
         next: (response) => {
           this.baselineData = response.baseline_curve;
           this.currentConsumption = response.baseline_fresh_h2;
+          this.baselineTopologyData = response.baseline_topology || [];
           
           this.optimizedData = [];
           this.optimizedConsumption = 0;
           this.difference = 0;
           this.isOptimized = false;
           this.topologyData = [];
+          this.showTopology = false;
           this.isLoading = false;
           
           this.cdr.detectChanges();
@@ -103,7 +147,6 @@ export class AppComponent implements AfterViewInit {
         },
         error: (error) => {
           console.error('Ошибка загрузки baseline:', error);
-          // Пытаемся достать детальное сообщение от бэкенда (FastAPI)
           const detail = error.error?.detail || 'Проверьте подключение к бэкенду';
           this.errorMessage = `Ошибка загрузки данных: ${detail}`;
           this.isLoading = false;
@@ -123,18 +166,22 @@ export class AppComponent implements AfterViewInit {
     this.cdr.detectChanges();
 
     this.http.get<OptimizeResponse>(
-      `${this.apiUrl}/optimize?method=${this.selectedMethod}`
+      `${this.apiUrl}/optimize?method=${this.selectedMethod}&dataset_id=${this.selectedDatasetId}`
     ).subscribe({
       next: (response) => {
         this.baselineData = response.baseline_curve;
         this.currentConsumption = response.baseline_fresh_h2;
         
+        this.appliedMethod = this.selectedMethod; // Фиксируем метод, которым мы оптимизировали
+
         this.optimizedData = response.optimized_curve;
         this.optimizedConsumption = response.optimized_fresh_h2;
         this.difference = response.saved_h2;
         this.isImprovement = response.saved_h2 > 0;
         this.isOptimized = true;
         this.topologyData = response.new_topology || [];
+        // При новой оптимизации можно оставить топологию открытой, или скрыть. 
+        // Оставим как есть: если была открыта - будет открыта.
         this.isLoading = false;
         
         this.cdr.detectChanges();
@@ -142,7 +189,6 @@ export class AppComponent implements AfterViewInit {
       },
       error: (error) => {
         console.error('Ошибка оптимизации:', error);
-        // Пытаемся достать детальное сообщение от бэкенда (FastAPI)
         const detail = error.error?.detail || error.message || 'Неизвестная ошибка';
         this.errorMessage = `Ошибка оптимизации: ${detail}`;
         this.isLoading = false;
@@ -156,9 +202,15 @@ export class AppComponent implements AfterViewInit {
   // ============================================
   changeMethod(method: OptimizationMethod) {
     this.selectedMethod = method;
-    if (this.isOptimized) {
-      this.optimize();
-    }
+    // Больше не делаем автоматическую оптимизацию:
+    // if (this.isOptimized) { this.optimize(); }
+  }
+
+  // ============================================
+  // ТОГГЛ ТАБЛИЦЫ
+  // ============================================
+  toggleTopology() {
+    this.showTopology = !this.showTopology;
   }
 
   // ============================================
@@ -391,7 +443,7 @@ export class AppComponent implements AfterViewInit {
         .style('font-size', '11px')
         .style('fill', '#888')
         .style('font-weight', '400')
-        .text(`Метод: ${this.selectedMethod.toUpperCase()}`);
+        .text(`Метод: ${this.appliedMethod.toUpperCase()}`);
     }
 
     // Заголовок

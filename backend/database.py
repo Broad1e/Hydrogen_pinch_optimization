@@ -26,7 +26,16 @@ def get_connection():
 
 
 def load_streams_from_db() -> list[StreamData]:
-    # Загрузка всех потоков из таблицы streams
+    """_summary_
+
+    Raises:
+        HTTPException: _description_
+        HTTPException: _description_
+        HTTPException: _description_
+
+    Returns:
+        list[StreamData]: _description_
+    """
     conn = get_connection()
     try:
         with conn.cursor() as cur:

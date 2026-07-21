@@ -50,37 +50,25 @@
     </table>
   </div>
 
-  <!-- Таблица топологии (план переключений) -->
-  <div class="table-wrapper topology-wrapper" *ngIf="isOptimized && topologyData.length > 0">
-    <div class="topology-title">📋 План переключений потоков</div>
-    <table class="results-table topology-table">
-      <thead>
-        <tr>
-          <th>Источник</th>
-          <th>Потребитель</th>
-          <th>Расход, Нм³/ч</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let link of topologyData" 
-            [class.fresh-source]="link.source_name.includes('Свежий')">
-          <td class="source-cell">{{ link.source_name }}</td>
-          <td class="sink-cell">{{ link.sink_name }}</td>
-          <td class="flow-cell">{{ link.flow_amount | number:'1.1-1' }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
   <!-- Управление -->
   <div class="controls">
+    <div class="dataset-selector">
+      <span class="method-label">Датасет:</span>
+      <select class="dataset-select" (change)="changeDataset($event)">
+        <option *ngFor="let ds of datasets" [value]="ds.id" [selected]="ds.id === selectedDatasetId">
+          {{ ds.description || 'Датасет ' + ds.id }}
+        </option>
+      </select>
+    </div>
+
     <div class="method-selector">
       <span class="method-label">Метод оптимизации:</span>
       <div class="method-buttons">
         <button 
           *ngFor="let m of methods"
           (click)="changeMethod(m)"
-          [class.active]="selectedMethod === m"
+          [class.active]="appliedMethod === m && isOptimized"
+          [class.selected]="selectedMethod === m && !(appliedMethod === m && isOptimized)"
           class="method-btn">
           {{ m === 'lp' ? 'LP' : m === 'cascade' ? 'Cascade' : m === 'mcmf' ? 'MCMF' : 'NLP' }}
         </button>
@@ -96,5 +84,60 @@
         <span class="spinner"></span> Оптимизация...
       </span>
     </button>
+    
+    <button *ngIf="isOptimized && topologyData.length > 0"
+      (click)="toggleTopology()" 
+      class="toggle-btn">
+      <span *ngIf="!showTopology">Показать план переключений 👁️</span>
+      <span *ngIf="showTopology">Скрыть план переключений 🙈</span>
+    </button>
+  </div>
+
+  <!-- Таблицы топологий (план переключений) -->
+  <div class="topologies-container" *ngIf="isOptimized && showTopology && (topologyData.length > 0 || baselineTopologyData.length > 0)">
+    
+    <!-- Исходная топология -->
+    <div class="table-wrapper topology-wrapper" *ngIf="baselineTopologyData.length > 0">
+      <div class="topology-title">📋 Исходный план (Жадный алгоритм)</div>
+      <table class="results-table topology-table">
+        <thead>
+          <tr>
+            <th>Источник</th>
+            <th>Потребитель</th>
+            <th>Расход, Нм³/ч</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let link of baselineTopologyData" 
+              [class.fresh-source]="link.source_name.includes('Свежий')">
+            <td class="source-cell">{{ link.source_name }}</td>
+            <td class="sink-cell">{{ link.sink_name }}</td>
+            <td class="flow-cell">{{ link.flow_amount | number:'1.1-1' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Оптимизированная топология -->
+    <div class="table-wrapper topology-wrapper" *ngIf="topologyData.length > 0">
+      <div class="topology-title">📋 Новый план ({{appliedMethod | uppercase}})</div>
+      <table class="results-table topology-table">
+        <thead>
+          <tr>
+            <th>Источник</th>
+            <th>Потребитель</th>
+            <th>Расход, Нм³/ч</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let link of topologyData" 
+              [class.fresh-source]="link.source_name.includes('Свежий')">
+            <td class="source-cell">{{ link.source_name }}</td>
+            <td class="sink-cell">{{ link.sink_name }}</td>
+            <td class="flow-cell">{{ link.flow_amount | number:'1.1-1' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
