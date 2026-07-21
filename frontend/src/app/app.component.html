@@ -1,0 +1,100 @@
+<div class="container">
+  <!-- Ошибка -->
+  <div class="error-message" *ngIf="errorMessage">
+    <span class="error-icon">⚠️</span> {{ errorMessage }}
+  </div>
+
+  <!-- График -->
+  <div class="chart-wrapper">
+    <div #chart class="chart-container"></div>
+  </div>
+
+  <!-- Таблица -->
+  <div class="table-wrapper">
+    <div class="status-badge" *ngIf="isOptimized" 
+         [class.improvement]="isImprovement" 
+         [class.degradation]="!isImprovement">
+      <span *ngIf="isImprovement">✅ Оптимизация успешна (потребление уменьшилось)</span>
+      <span *ngIf="!isImprovement">⚠️ Оптимизация ухудшила результат (потребление увеличилось)</span>
+    </div>
+
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Текущий</th>
+          <th>Оптимизированный</th>
+          <th>Разность</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="row-label">объем потребления H₂</td>
+          <td class="value current">
+            {{ currentConsumption | number:'1.0-0' }}
+          </td>
+          <td class="value optimized" 
+              [class.improved]="isImprovement && isOptimized" 
+              [class.degraded]="!isImprovement && isOptimized">
+            {{ isOptimized ? (optimizedConsumption | number:'1.0-0') : '-' }}
+          </td>
+          <td class="value difference" 
+              [class.positive]="difference > 0" 
+              [class.negative]="difference < 0">
+            {{ isOptimized ? (difference | number:'1.0-0') : '-' }}
+            <span *ngIf="isOptimized && difference > 0" class="arrow up">↑</span>
+            <span *ngIf="isOptimized && difference < 0" class="arrow down">↓</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Таблица топологии (план переключений) -->
+  <div class="table-wrapper topology-wrapper" *ngIf="isOptimized && topologyData.length > 0">
+    <div class="topology-title">📋 План переключений потоков</div>
+    <table class="results-table topology-table">
+      <thead>
+        <tr>
+          <th>Источник</th>
+          <th>Потребитель</th>
+          <th>Расход, Нм³/ч</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let link of topologyData" 
+            [class.fresh-source]="link.source_name.includes('Свежий')">
+          <td class="source-cell">{{ link.source_name }}</td>
+          <td class="sink-cell">{{ link.sink_name }}</td>
+          <td class="flow-cell">{{ link.flow_amount | number:'1.1-1' }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Управление -->
+  <div class="controls">
+    <div class="method-selector">
+      <span class="method-label">Метод оптимизации:</span>
+      <div class="method-buttons">
+        <button 
+          *ngFor="let m of methods"
+          (click)="changeMethod(m)"
+          [class.active]="selectedMethod === m"
+          class="method-btn">
+          {{ m === 'lp' ? 'LP' : m === 'cascade' ? 'Cascade' : m === 'mcmf' ? 'MCMF' : 'NLP' }}
+        </button>
+      </div>
+    </div>
+
+    <button 
+      (click)="optimize()" 
+      class="optimize-btn"
+      [class.loading]="isLoading">
+      <span *ngIf="!isLoading">🔧 Оптимизировать</span>
+      <span *ngIf="isLoading" class="loading-spinner">
+        <span class="spinner"></span> Оптимизация...
+      </span>
+    </button>
+  </div>
+</div>
