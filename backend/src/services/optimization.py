@@ -1,11 +1,12 @@
 """Бизнес-логика для управления процессом оптимизации."""
 
-from src.schemas.pinch import StreamType, OptMethod, StreamData
+
+from src.schemas.pinch import OptMethod, StreamData, StreamType
 from src.services.solvers import (
-    calculate_baseline_fresh_h2,
     build_cascade_curve,
-    run_lp_optimization,
+    calculate_baseline_fresh_h2,
     run_cascade_optimization,
+    run_lp_optimization,
     run_mcmf_optimization,
     run_nlp_optimization,
 )

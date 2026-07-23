@@ -1,14 +1,15 @@
 """FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from src.core.logger import setup_logging
 from src.api.router import router
-from src.db.session import SessionLocal
+from src.core.logger import setup_logging
 from src.db.init_db import init_db
+from src.db.session import SessionLocal
 
 
 @asynccontextmanager
@@ -22,14 +23,17 @@ async def lifespan(app: FastAPI):
 
     Args:
         app (FastAPI): Экземпляр приложения FastAPI.
+
+    Yields:
+        None: Возвращает управление приложению FastAPI.
     """
-    # Setup Loguru logger
+    # Настройка логгера Loguru
     setup_logging()
     logger.info("Starting up Hydrogen Pinch Optimizer API...")
     
-    # Initialize Database on startup
+    # Инициализация базы данных при запуске
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         init_db(db)
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
@@ -41,7 +45,7 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down API...")
 
 
-# Initialize FastAPI
+# Инициализация FastAPI
 app = FastAPI(
     title="Hydrogen Pinch Optimizer",
     description=(
@@ -52,7 +56,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware
+# Middleware (промежуточное ПО)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,13 +65,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register API Router
+# Регистрация API роутера
 app.include_router(router)
 
 
 @app.get("/")
-def read_root():
-    """Root endpoint for basic verification."""
+def read_root() -> dict:
+    """Корневой эндпоинт для базовой проверки работоспособности.
+
+    Returns:
+        dict: Сообщение о статусе API, версия и ссылка на документацию.
+    """
     return {
         "message": "Hydrogen Pinch Optimizer API is running",
         "version": "2.0.0",

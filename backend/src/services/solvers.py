@@ -10,7 +10,7 @@ try:
 except ImportError:
     nx = None
 
-from src.schemas.pinch import StreamType, StreamData, GraphPoint, TopologyLink
+from src.schemas.pinch import GraphPoint, StreamData, StreamType, TopologyLink
 
 
 def calculate_baseline_fresh_h2(streams: list[StreamData]) -> tuple[float, list[TopologyLink]]:
@@ -410,25 +410,25 @@ def run_mcmf_optimization(
     G = nx.DiGraph()
 
     # Узлы
-    # Источники: supply (demand < 0)
+    # Источники: предложение (demand < 0)
     for src in sources:
         G.add_node(f"src_{src.id}", demand=int(-src.flow_rate * SCALE))
 
-    # Стоки: demand (demand > 0)
+    # Стоки: спрос (demand > 0)
     for snk in sinks:
         G.add_node(f"snk_{snk.id}", demand=int(snk.flow_rate * SCALE))
 
-    # Свежий H2: supply = total_sink (покрывает весь дефицит при необходимости)
+    # Свежий H2: предложение = total_sink (покрывает весь дефицит при необходимости)
     G.add_node("fresh", demand=int(-total_sink * SCALE))
 
-    # Отвал: absorbs = total_source (неиспользованные источники)
-    #   + excess fresh (total_sink - fresh_used)
-    # Баланс: supply = source + fresh = total_source + total_sink
-    #          demand = sink + waste = total_sink + total_source
+    # Отвал: поглощает = total_source (неиспользованные источники)
+    #   + избыток свежего (total_sink - fresh_used)
+    # Баланс: предложение = источник + свежий = total_source + total_sink
+    #         спрос = сток + отвал = total_sink + total_source
     G.add_node("waste", demand=int(total_source * SCALE))
 
     # Рёбра
-    # source -> sink (только если purity >= required И allowed)
+    # источник -> сток (только если purity >= required И разрешено)
     for src in sources:
         for snk in sinks:
             allowed = src.allowed_connections
@@ -440,10 +440,10 @@ def run_mcmf_optimization(
             G.add_edge(
                 f"src_{src.id}", f"snk_{snk.id}",
                 capacity=int(src.flow_rate * SCALE),
-                weight=max(1, int(purity_gap * 10)),  # min cost = 1 (для различения от 0)
+                weight=max(1, int(purity_gap * 10)),  # min cost = 1 (для отличия от 0)
             )
 
-    # source -> waste (бесплатно)
+    # источник -> отвал (бесплатно)
     for src in sources:
         G.add_edge(
             f"src_{src.id}", "waste",
@@ -451,7 +451,7 @@ def run_mcmf_optimization(
             weight=0,
         )
 
-    # fresh -> sink (очень дорого)
+    # свежий -> сток (очень дорого)
     for snk in sinks:
         G.add_edge(
             "fresh", f"snk_{snk.id}",
@@ -459,7 +459,7 @@ def run_mcmf_optimization(
             weight=FRESH_COST,
         )
 
-    # fresh -> waste (сброс неиспользованного свежего, бесплатно)
+    # свежий -> отвал (сброс неиспользованного свежего, бесплатно)
     G.add_edge(
         "fresh", "waste",
         capacity=int(total_sink * SCALE),
@@ -488,7 +488,7 @@ def run_mcmf_optimization(
     topology: list[TopologyLink] = []
     total_fresh = 0.0
 
-    # source -> sink
+    # источник -> сток
     for src in sources:
         src_key = f"src_{src.id}"
         if src_key not in flow_dict:
@@ -504,7 +504,7 @@ def run_mcmf_optimization(
                     flow_amount=round(flow_real, 2),
                 ))
 
-    # fresh -> sink
+    # свежий -> сток
     if "fresh" in flow_dict:
         for snk in sinks:
             snk_key = f"snk_{snk.id}"
@@ -552,7 +552,7 @@ def run_nlp_optimization(
             if allowed and sinks[j].id not in allowed:
                 blocked[i * M + j] = True
 
-    # Целевая функция: sum(fresh[j]) + penalty * sum((purity_excess[j])^2)
+    # Целевая функция: sum(fresh[j]) + штраф * sum((purity_excess[j])^2)
     # purity_excess[j] = (чистота_смеси_j - требуемая_j), если > 0
     def objective(x):
         total_fresh = sum(x[N * M + j] for j in range(M))

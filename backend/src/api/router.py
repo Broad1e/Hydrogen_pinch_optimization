@@ -1,15 +1,19 @@
 """API Router definitions for FastAPI."""
 
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import text, func
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
+from sqlalchemy import func, text
+from sqlalchemy.orm import Session
 
+from src.core.models import StreamModel
 from src.db.session import get_db
-from src.db.models import StreamModel
 from src.schemas.pinch import (
-    OptMethod, BaselineResponse, OptimizeResponse, 
-    StreamData, StreamCollection, DatasetInfo, DatasetsResponse
+    BaselineResponse,
+    DatasetInfo,
+    DatasetsResponse,
+    OptimizeResponse,
+    OptMethod,
+    StreamCollection,
 )
 from src.services.optimization import process_optimization
 from src.services.solvers import build_cascade_curve, calculate_baseline_fresh_h2
@@ -51,8 +55,8 @@ def get_datasets(db: Session = Depends(get_db)):
     Returns:
         DatasetsResponse: Список информации о датасетах.
     """
-    # Count streams per dataset
-    results = db.query(StreamModel.dataset_id, func.count(StreamModel.id)).group_by(StreamModel.dataset_id).all()
+    # Подсчет потоков для каждого датасета
+    results = db.query(StreamModel.dataset_id, func.count(StreamModel.id)).group_by(StreamModel.dataset_id).order_by(StreamModel.dataset_id).all()
     
     datasets = []
     for d_id, count in results:
@@ -91,7 +95,7 @@ def get_baseline_data(
     if not rows:
         raise HTTPException(status_code=404, detail=f"Датасет {dataset_id} не найден (таблица пуста)")
 
-    # Serialize to Pydantic models
+    # Сериализация в модели Pydantic
     raw_streams = []
     for r in rows:
         raw_streams.append({

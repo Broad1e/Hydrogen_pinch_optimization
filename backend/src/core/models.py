@@ -1,6 +1,6 @@
 """Схемы и модели SQLAlchemy для базы данных."""
 
-from sqlalchemy import Column, Integer, String, Float, JSON
+from sqlalchemy import JSON, Column, Float, Integer, String
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()

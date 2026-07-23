@@ -1,7 +1,8 @@
 """Logger configuration using Loguru."""
 
-import sys
 import logging
+import sys
+
 from loguru import logger
 
 
@@ -12,14 +13,15 @@ class InterceptHandler(logging.Handler):
     чтобы логи были отформатированы и собраны в одном месте.
     """
 
-    def emit(self, record: logging.LogRecord):
-        # Get corresponding Loguru level if it exists
+    def emit(self, record: logging.LogRecord) -> None:
+        """Перехватывает стандартный лог и передает его в loguru."""
+        # Получаем соответствующий уровень Loguru, если он существует
         try:
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
 
-        # Find caller from where originated the logged message
+        # Находим вызывающую функцию, откуда пришло сообщение лога
         frame, depth = logging.currentframe(), 2
         while frame and frame.f_code.co_filename == logging.__file__:
             frame = frame.f_back
@@ -36,14 +38,14 @@ def setup_logging():
     Удаляет стандартные обработчики логов, настраивает формат вывода
     в консоль для Loguru и подключает InterceptHandler к логгерам uvicorn.
     """
-    # Remove default handlers
+    # Удаляем стандартные обработчики
     logging.root.handlers = []
     
-    # Configure Loguru
+    # Настраиваем Loguru
     logger.remove()
     logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
 
-    # Intercept standard logging
+    # Перехватываем стандартное логирование
     logging.getLogger("uvicorn.access").handlers = [InterceptHandler()]
     logging.getLogger("uvicorn.error").handlers = [InterceptHandler()]
     logging.getLogger("fastapi").handlers = [InterceptHandler()]

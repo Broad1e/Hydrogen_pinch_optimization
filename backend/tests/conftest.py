@@ -1,16 +1,16 @@
-"""Pytest fixtures for testing Hydrogen Pinch API."""
+"""Фикстуры Pytest для тестирования Hydrogen Pinch API."""
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.main import app
-from src.db.session import get_db
-from src.db.models import Base, StreamModel
+from src.core.models import Base, StreamModel
 from src.db.init_db import INITIAL_STREAMS
+from src.db.session import get_db
+from src.main import app
 
-# Use an in-memory SQLite database for testing
+# Использование базы данных SQLite в памяти для тестирования
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
 engine = create_engine(
@@ -18,9 +18,14 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 @pytest.fixture(scope="session")
 def db_engine():
-    """Create test database and tables."""
+    """Создает тестовый движок базы данных и таблицы.
+
+    Yields:
+        Engine: Экземпляр SQLAlchemy Engine для тестовой базы данных.
+    """
     Base.metadata.create_all(bind=engine)
     yield engine
     Base.metadata.drop_all(bind=engine)
@@ -28,12 +33,19 @@ def db_engine():
 
 @pytest.fixture(scope="function")
 def db_session(db_engine):
-    """Provide a transactional scope around a series of operations."""
+    """Предоставляет контекст транзакции для серии операций базы данных.
+
+    Args:
+        db_engine (Engine): Экземпляр SQLAlchemy Engine для тестовой базы данных.
+
+    Yields:
+        Session: Сессия базы данных SQLAlchemy для тестирования.
+    """
     connection = db_engine.connect()
     transaction = connection.begin()
     session = TestingSessionLocal(bind=connection)
 
-    # Seed initial data for testing
+    # Заполнение начальными данными для тестирования
     for stream_data in INITIAL_STREAMS:
         stream = StreamModel(**stream_data)
         session.add(stream)
@@ -48,8 +60,20 @@ def db_session(db_engine):
 
 @pytest.fixture(scope="function")
 def client(db_session):
-    """Provide FastAPI test client with mocked DB session."""
+    """Предоставляет тестовый клиент FastAPI со сфабрикованной сессией БД.
+
+    Args:
+        db_session (Session): Сессия базы данных SQLAlchemy для тестирования.
+
+    Yields:
+        TestClient: Клиент для тестирования API FastAPI.
+    """
     def override_get_db():
+        """Переопределяет генератор сессий базы данных для проведения тестов.
+
+        Yields:
+            Session: Сессия тестовой базы данных SQLAlchemy.
+        """
         try:
             yield db_session
         finally:
@@ -59,3 +83,4 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+

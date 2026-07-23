@@ -1,11 +1,12 @@
-"""Script to initialize the database with schema and default data."""
+"""Скрипт для инициализации базы данных со схемой и начальными данными."""
 
 from loguru import logger
 from sqlalchemy.orm import Session
-from src.db.session import engine, SessionLocal
-from src.db.models import Base, StreamModel
 
-# Dataset 1: Original from init.sql
+from src.core.models import Base, StreamModel
+from src.db.session import SessionLocal, engine
+
+# Датасет 1: Исходные данные из init.sql
 DATASET_1_STREAMS = [
     {"dataset_id": 1, "name": "Гидрокрекинг (ВГО)", "type": "Sink", "flow_rate": 380.0, "purity": 97.0, "allowed_connections": []},
     {"dataset_id": 1, "name": "Гидрокрекинг (гудрон)", "type": "Sink", "flow_rate": 280.0, "purity": 96.0, "allowed_connections": []},
@@ -37,13 +38,13 @@ DATASET_1_STREAMS = [
     {"dataset_id": 1, "name": "Кат. риформинг CCR", "type": "Source", "flow_rate": 300.0, "purity": 88.0, "allowed_connections": [5, 6, 8, 9]},
 ]
 
-# Dataset 2: Variation for testing
+# Датасет 2: Вариация для тестирования
 DATASET_2_STREAMS = [
     {"dataset_id": 2, "name": "Гидрокрекинг (ВГО) V2", "type": "Sink", "flow_rate": 400.0, "purity": 98.0, "allowed_connections": []},
     {"dataset_id": 2, "name": "ГО дизельного топлива V2", "type": "Sink", "flow_rate": 200.0, "purity": 90.0, "allowed_connections": []},
     {"dataset_id": 2, "name": "Гидродепарафинизация V2", "type": "Sink", "flow_rate": 150.0, "purity": 85.0, "allowed_connections": []},
     
-    {"dataset_id": 2, "name": "Рецикловый газ ГК V2", "type": "Source", "flow_rate": 200.0, "purity": 98.5, "allowed_connections": []}, # no limits
+    {"dataset_id": 2, "name": "Рецикловый газ ГК V2", "type": "Source", "flow_rate": 200.0, "purity": 98.5, "allowed_connections": []}, # без ограничений
     {"dataset_id": 2, "name": "Мембранный блок V2", "type": "Source", "flow_rate": 100.0, "purity": 95.0, "allowed_connections": []},
     {"dataset_id": 2, "name": "PSA-установка V2", "type": "Source", "flow_rate": 250.0, "purity": 99.9, "allowed_connections": []},
 ]
